@@ -19,13 +19,13 @@ pos! {
     PSKILL_IMAGE, 32, 111, 42, 42,
     PSKILL_NAME, 32, 92, 42, 13,
     PSKILL_VALUE, 32, 158, 42, 13,
-    SKILL_IMAGE, 18, 230, 42, 42,
-    SKILL_TEXT_TOP, 67, 234, 99, 18,
-    SKILL_TEXT_BOTTOM, 67, 254, 90, 18,
-    PSKILL_XP, 20, 230, 42, 42,
-    PSKILL_MANA, 162, 230, 42, 42
+    SKILL_IMAGE, 19, 230, 42, 42,
+    SKILL_TEXT, 67, 232, 89, 38,
+    SKILL_BOX, 18, 228, 139, 46,
+    FLAG_IMAGE, 606, 8, 58, 64
 }
 
+pub const WINDOW_SIZE: Vec2 = Vec2 { x: 672., y: 586. };
 pub const H_SWITCHER_PORTRAIT_OFFSET: Vec2 = Vec2 { x: 0., y: 54. };
 pub const PSKILL_OFFSET: Vec2 = Vec2 { x: 70., y: 0. };
 pub const SKILL_OFFSET_H: Vec2 = Vec2 { x: 142., y: 0. };

@@ -1,24 +1,22 @@
+use crate::backpack::Backpack;
+use crate::character::Character;
+use crate::skill::Skill;
+use crate::spec::Spec;
+use crate::unit::Unit;
 use crate::utils::RawImage;
 pub struct Hero {
+    pub id: usize,
     pub character: Character,
+    pub units: Vec<Unit>,
+    pub skills: Vec<Skill>,
+    pub backpack: Backpack,
 
-    pub attack: u8,
-    pub defense: u8,
-    pub mpower: u8,
-    pub knowledge: u8,
+    pub pskills: [u8; 4],
     pub experience: u16,
     pub mana_max: u16,
     pub mana_current: u16,
     pub level: u8,
-    pub specialty_name: String,
-    pub specialty_image: RawImage,
-}
-
-pub struct Character {
-    pub portrait: RawImage,
-    pub portrait_small: RawImage,
-    pub name: String,
-    pub class: String,
+    pub spec: Spec,
 }
 
 pub fn demo_heroes(frame: &mut eframe::epi::Frame<'_>) -> Vec<Hero> {
@@ -31,18 +29,26 @@ pub fn demo_heroes(frame: &mut eframe::epi::Frame<'_>) -> Vec<Hero> {
         class: "Путешественник".to_string(),
     };
 
+    let units1 = Vec::new();
+    let skills1 = Vec::new();
+    let backpack1 = Backpack {};
+
     let hero1 = Hero {
+        id: 0,
         character: character1,
-        attack: 10,
-        defense: 4,
-        mpower: 12,
-        knowledge: 5,
+        units: units1,
+        skills: skills1,
+        backpack: backpack1,
+
+        pskills: [10, 4, 12, 5],
         experience: 37000,
         mana_max: 334,
         mana_current: 210,
         level: 17,
-        specialty_name: "Элементали".to_string(),
-        specialty_image: RawImage::from_bytes(include_bytes!("../resources/00_128.png"), frame),
+        spec: Spec {
+            name: "Элементали".to_string(),
+            image: RawImage::from_bytes(include_bytes!("../resources/00_128.png"), frame),
+        },
     };
 
     heroes.push(hero1);
@@ -54,18 +60,26 @@ pub fn demo_heroes(frame: &mut eframe::epi::Frame<'_>) -> Vec<Hero> {
         class: "Алхимик".to_string(),
     };
 
+    let units2 = Vec::new();
+    let skills2 = Vec::new();
+    let backpack2 = Backpack {};
+
     let hero2 = Hero {
+        id: 1,
         character: character2,
-        attack: 1,
-        defense: 1,
-        mpower: 2,
-        knowledge: 2,
+        units: units2,
+        skills: skills2,
+        backpack: backpack2,
+
+        pskills: [1, 1, 2, 2],
         experience: 0,
         mana_max: 10,
         mana_current: 10,
         level: 1,
-        specialty_name: "Джинны".to_string(),
-        specialty_image: RawImage::from_bytes(include_bytes!("../resources/00_33.png"), frame),
+        spec: Spec {
+            name: "Джинны".to_string(),
+            image: RawImage::from_bytes(include_bytes!("../resources/00_33.png"), frame),
+        },
     };
 
     heroes.push(hero2);
