@@ -1,7 +1,7 @@
 use eframe::{egui, epi};
 use image::GenericImageView;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct RawImage {
     pub texture_id: Option<egui::TextureId>,
     pub dimensions: (f32, f32),

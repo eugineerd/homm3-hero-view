@@ -1,21 +1,27 @@
 use eframe::{egui, epi};
 
+use crate::backend::Backend;
 use crate::edit_views::edit_mana_popup;
 use crate::edit_views::edit_pskill_popup;
-use crate::edit_views::edit_spec_window;
+use crate::edit_views::edit_skill_popup;
+use crate::edit_views::edit_spec_popup;
+// use crate::edit_views::edit_spec_window;
 use crate::edit_views::edit_xp_popup;
 use crate::geometry::*;
 use crate::hero::*;
+use crate::skill::Skill;
+use crate::spec::Spec;
 use crate::utils::RawImage;
 
 const H_GOLD: egui::Color32 = egui::Color32::from_rgb(248, 230, 194);
 
 #[derive(Default)]
-pub struct HeroViewer {
+pub struct HeroViewer<B: Backend> {
     static_assets: StaticAssets,
     heroes: Vec<Hero>,
-    selected_hero_idx: usize,
+    hero_idx: usize,
     pixels_per_point: f32,
+    backend: B,
 }
 
 #[derive(Default)]
@@ -24,6 +30,8 @@ pub struct StaticAssets {
     pub pskills: [RawImage; 4],
     pub xp: RawImage,
     pub mana: RawImage,
+    pub luck: [RawImage; 7],
+    pub morale: [RawImage; 7],
     pub flag: RawImage,
 }
 
@@ -41,10 +49,26 @@ impl StaticAssets {
             .load_bytes(include_bytes!("../resources/pskill_mana.png"), frame);
         self.flag
             .load_bytes(include_bytes!("../resources/crest.png"), frame);
+
+        self.luck[0].load_bytes(include_bytes!("../resources/luck/00_00.png"), frame);
+        self.luck[1].load_bytes(include_bytes!("../resources/luck/00_01.png"), frame);
+        self.luck[2].load_bytes(include_bytes!("../resources/luck/00_02.png"), frame);
+        self.luck[3].load_bytes(include_bytes!("../resources/luck/00_03.png"), frame);
+        self.luck[4].load_bytes(include_bytes!("../resources/luck/00_04.png"), frame);
+        self.luck[5].load_bytes(include_bytes!("../resources/luck/00_05.png"), frame);
+        self.luck[6].load_bytes(include_bytes!("../resources/luck/00_06.png"), frame);
+
+        self.morale[0].load_bytes(include_bytes!("../resources/morale/00_00.png"), frame);
+        self.morale[1].load_bytes(include_bytes!("../resources/morale/00_01.png"), frame);
+        self.morale[2].load_bytes(include_bytes!("../resources/morale/00_02.png"), frame);
+        self.morale[3].load_bytes(include_bytes!("../resources/morale/00_03.png"), frame);
+        self.morale[4].load_bytes(include_bytes!("../resources/morale/00_04.png"), frame);
+        self.morale[5].load_bytes(include_bytes!("../resources/morale/00_05.png"), frame);
+        self.morale[6].load_bytes(include_bytes!("../resources/morale/00_06.png"), frame);
     }
 }
 
-impl epi::App for HeroViewer {
+impl<B: Backend> epi::App for HeroViewer<B> {
     fn setup(
         &mut self,
         ctx: &egui::CtxRef,
@@ -55,7 +79,7 @@ impl epi::App for HeroViewer {
 
         self.static_assets.init(frame);
         self.heroes = demo_heroes(frame);
-        self.selected_hero_idx = 0;
+        self.hero_idx = 0;
 
         let mut visuals = egui::Visuals::default();
         visuals.override_text_color = Some(egui::Color32::WHITE);
@@ -68,7 +92,11 @@ impl epi::App for HeroViewer {
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-        ctx.set_pixels_per_point(1.0);
+        self.process_global_hotkeys(ctx.input());
+
+        self.backend.update(frame);
+
+        ctx.set_pixels_per_point(self.pixels_per_point);
         frame.set_window_size(WINDOW_SIZE);
 
         egui::Area::new("background")
@@ -83,8 +111,11 @@ impl epi::App for HeroViewer {
                 self.show_flag(ui);
                 self.show_portrait_name_class(ui);
                 self.show_primary_skills(ui);
+                self.show_xp(ui);
+                self.show_mana(ui);
                 self.show_specialty(ui);
-                // self.show_skills(ui);
+                self.show_skills(ui);
+                self.show_luck_morale(ui);
             });
     }
 
@@ -93,13 +124,13 @@ impl epi::App for HeroViewer {
     }
 }
 
-impl HeroViewer {
+impl<B: Backend> HeroViewer<B> {
     fn hero(&self) -> &Hero {
-        &self.heroes[self.selected_hero_idx]
+        &self.heroes[self.hero_idx]
     }
 
     fn hero_mut(&mut self) -> &mut Hero {
-        &mut self.heroes[self.selected_hero_idx]
+        &mut self.heroes[self.hero_idx]
     }
 
     fn show_hero_switcher(&mut self, ui: &mut egui::Ui) {
@@ -111,11 +142,11 @@ impl HeroViewer {
                 )
                 .clicked()
             {
-                self.selected_hero_idx = idx;
+                self.hero_idx = idx;
             }
         }
-        let selected_hero = H_SWITCHER_PORTRAIT
-            .translate(H_SWITCHER_PORTRAIT_OFFSET * self.selected_hero_idx as f32);
+        let selected_hero =
+            H_SWITCHER_PORTRAIT.translate(H_SWITCHER_PORTRAIT_OFFSET * self.hero_idx as f32);
         selected_frame_around(ui, selected_hero);
     }
 
@@ -135,14 +166,19 @@ impl HeroViewer {
         ui.put(H_CLASS, hero_class_label);
     }
 
-    fn show_specialty(&self, ui: &mut egui::Ui) {
+    fn show_specialty(&mut self, ui: &mut egui::Ui) {
         let widget_response = ui.put(SPEC_IMAGE, self.hero().spec.image.image_button());
-        edit_spec_window(
+        let specs = self
+            .backend
+            .get_specs(&self.heroes[self.hero_idx].character.class);
+        if let Some(new_value) = edit_spec_popup(
             ui,
             widget_response,
-            &[self.hero().spec.clone()],
-            &self.hero().spec,
-        );
+            &specs,
+            &self.heroes[self.hero_idx].spec,
+        ) {
+            self.hero_mut().spec = new_value;
+        }
 
         ui.allocate_ui_at_rect(SKILL_TEXT.translate(-SKILL_OFFSET_V), |ui| {
             let spec_top_label = egui::Label::new("Специальность");
@@ -178,22 +214,109 @@ impl HeroViewer {
 
             let name_label = egui::Label::new(egui::RichText::new(*name).color(H_GOLD));
             ui.put(name_rect, name_label);
-            let value_label = egui::Label::new(&format!("{}", value));
+            let value_label = egui::Label::new(&value.to_string());
             ui.put(value_rect, value_label);
         }
+    }
 
-        let xp_button_response = ui.put(SKILL_IMAGE, self.static_assets.xp.image_button());
-        if let Some(new_value) = edit_xp_popup(ui, xp_button_response, self.hero().experience) {
+    fn show_skills(&mut self, ui: &mut egui::Ui) {
+        for (i, skill) in self.heroes[self.hero_idx].skills.iter_mut().enumerate() {
+            let offset = SKILL_OFFSET_V * (i % 4 + 1) as f32 + SKILL_OFFSET_H * (i / 4) as f32;
+            let widget_response = if let Some(skill) = skill {
+                let image = skill.image.image_button();
+                ui.put(SKILL_IMAGE.translate(offset), image)
+            } else {
+                let button = egui::Button::new("").fill(egui::Color32::TRANSPARENT);
+                ui.put(SKILL_IMAGE.translate(offset), button)
+            };
+            let skills = self.backend.get_skills();
+            if let Some(new_value) = edit_skill_popup(ui, widget_response, skills, &skill, offset) {
+                *skill = new_value;
+            }
+
+            if let Some(skill) = skill {
+                ui.allocate_ui_at_rect(SKILL_TEXT.translate(offset), |ui| {
+                    let spec_top_label = egui::Label::new(&skill.name);
+                    ui.add(spec_top_label);
+                    ui.add_space(4.);
+                    let spec_bottom_label = egui::Label::new(&format!("{} ступени", skill.level));
+                    ui.add(spec_bottom_label);
+                });
+            }
+        }
+    }
+
+    fn show_luck_morale(&self, ui: &mut egui::Ui) {
+        ui.put(
+            LUCK_IMAGE,
+            self.static_assets.luck[self.hero().luck as usize].image(),
+        )
+        .on_hover_text(
+            [
+                "Отряд проклят!",
+                "Ужасная",
+                "Плохая",
+                "Нормальная",
+                "Хорошая",
+                "Отличная",
+                "Великолепная",
+            ][self.hero().luck as usize],
+        );
+        ui.put(
+            MORALE_IMAGE,
+            self.static_assets.morale[self.hero().morale as usize].image(),
+        )
+        .on_hover_text(
+            [
+                "Готовы предать",
+                "Ужасная",
+                "Плохая",
+                "Нормальная",
+                "Хорошая",
+                "Отличная",
+                "Ярость!",
+            ][self.hero().morale as usize],
+        );
+    }
+
+    fn show_units(&mut self, ui: &mut egui::Ui) {
+        unimplemented!()
+    }
+
+    fn show_backpack(&mut self, ui: &mut egui::Ui) {
+        unimplemented!()
+    }
+
+    fn show_flag(&mut self, ui: &mut egui::Ui) {
+        if ui
+            .put(FLAG_IMAGE, self.static_assets.flag.image_button())
+            .clicked()
+        {}
+    }
+
+    fn process_global_hotkeys(&mut self, input: &egui::InputState) {
+        if input.key_pressed(egui::Key::X) && input.modifiers.ctrl {
+            self.pixels_per_point = (self.pixels_per_point + 0.1).min(1.5);
+        } else if input.key_pressed(egui::Key::Z) && input.modifiers.ctrl {
+            self.pixels_per_point = (self.pixels_per_point - 0.1).max(1.0);
+        }
+    }
+
+    fn show_xp(&mut self, ui: &mut egui::Ui) {
+        let widget_response = ui.put(SKILL_IMAGE, self.static_assets.xp.image_button());
+        if let Some(new_value) = edit_xp_popup(ui, widget_response, self.hero().experience) {
             self.hero_mut().experience = new_value;
         }
         ui.allocate_ui_at_rect(SKILL_TEXT, |ui| {
             let xp_top_label = egui::Label::new("Опыт");
             ui.add(xp_top_label);
             ui.add_space(4.);
-            let xp_bottom_label = egui::Label::new(&format!("{}", self.hero().experience));
+            let xp_bottom_label = egui::Label::new(&self.hero().experience.to_string());
             ui.add(xp_bottom_label)
         });
+    }
 
+    fn show_mana(&mut self, ui: &mut egui::Ui) {
         let widget_response = ui.put(
             SKILL_IMAGE.translate(SKILL_OFFSET_H),
             self.static_assets.mana.image_button(),
@@ -218,25 +341,6 @@ impl HeroViewer {
             ));
             ui.add(mana_bottom_label);
         });
-    }
-
-    fn show_skills(&self, ui: &mut egui::Ui) {
-        unimplemented!()
-    }
-
-    fn show_units(&mut self, ui: &mut egui::Ui) {
-        unimplemented!()
-    }
-
-    fn show_backpack(&mut self, ui: &mut egui::Ui) {
-        unimplemented!()
-    }
-
-    fn show_flag(&mut self, ui: &mut egui::Ui) {
-        if ui
-            .put(FLAG_IMAGE, self.static_assets.flag.image_button())
-            .clicked()
-        {}
     }
 }
 
