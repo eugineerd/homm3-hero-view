@@ -1,9 +1,12 @@
 use eframe::{egui, epi};
 use image::GenericImageView;
 
-#[derive(Default, Clone, PartialEq)]
+pub const H_GOLD: egui::Color32 = egui::Color32::from_rgb(248, 230, 194);
+
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct RawImage {
     pub texture_id: Option<egui::TextureId>,
+    pub bytes: Box<Vec<u8>>,
     pub dimensions: (f32, f32),
 }
 
@@ -26,8 +29,11 @@ impl RawImage {
             .tex_allocator()
             .alloc_srgba_premultiplied(size, &pixels);
 
+        let bytes = Box::new(Vec::from_iter(bytes.iter().cloned()));
+
         RawImage {
             texture_id: Some(texture),
+            bytes,
             dimensions: (size.0 as f32, size.1 as f32),
         }
     }
@@ -35,6 +41,7 @@ impl RawImage {
     pub fn load_bytes(&mut self, bytes: &[u8], frame: &mut epi::Frame<'_>) {
         let new_image = RawImage::from_bytes(bytes, frame);
         self.dimensions = new_image.dimensions;
+        self.bytes = new_image.bytes;
         self.texture_id = new_image.texture_id;
     }
 
@@ -45,4 +52,10 @@ impl RawImage {
     pub fn image_button(&self) -> egui::ImageButton {
         egui::ImageButton::new(self.texture_id.unwrap_or_default(), self.dimensions)
     }
+}
+
+pub fn selected_frame_around(ui: &mut egui::Ui, mut rect: egui::Rect) {
+    rect = rect.expand(1.0);
+    ui.painter()
+        .rect_stroke(rect, 0.0, egui::Stroke::new(1., H_GOLD));
 }

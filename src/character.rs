@@ -1,5 +1,6 @@
 use crate::utils::RawImage;
 
+#[derive(Clone, Debug)]
 pub struct Character {
     pub portrait: RawImage,
     pub portrait_small: RawImage,

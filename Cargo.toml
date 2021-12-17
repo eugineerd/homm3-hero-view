@@ -7,7 +7,10 @@ edition = "2021"
 
 [dependencies]
 eframe = { git = "https://github.com/emilk/egui.git", branch = "master" }
+rfd = "0.6"
 image = "0.23"
+sqlx = { version = "0.5", features = [ "runtime-tokio-rustls", "postgres" ] }
+tokio = "1"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -1,74 +1,27 @@
 use eframe::{egui, epi};
 
-use crate::backend::Backend;
-use crate::edit_views::edit_mana_popup;
-use crate::edit_views::edit_pskill_popup;
-use crate::edit_views::edit_skill_popup;
-use crate::edit_views::edit_spec_popup;
-// use crate::edit_views::edit_spec_window;
-use crate::edit_views::edit_xp_popup;
+use crate::backend::BackendStatus;
+use crate::backend::DemoBackend;
 use crate::geometry::*;
 use crate::hero::*;
-use crate::skill::Skill;
-use crate::spec::Spec;
-use crate::utils::RawImage;
-
-const H_GOLD: egui::Color32 = egui::Color32::from_rgb(248, 230, 194);
+use crate::static_assets::StaticAssets;
+use crate::utils::*;
+use crate::widgets::*;
 
 #[derive(Default)]
-pub struct HeroViewer<B: Backend> {
+pub struct HeroViewer {
     static_assets: StaticAssets,
-    heroes: Vec<Hero>,
-    hero_idx: usize,
+    hero: Option<Hero>,
+    hero_select_buttons: Vec<HeroSelectButton>,
+    selected_hero_idx: usize,
+    player_id: usize,
     pixels_per_point: f32,
-    backend: B,
+    search_query: String,
+    backend: DemoBackend,
+    backend_messages: Vec<String>,
 }
 
-#[derive(Default)]
-pub struct StaticAssets {
-    pub background: RawImage,
-    pub pskills: [RawImage; 4],
-    pub xp: RawImage,
-    pub mana: RawImage,
-    pub luck: [RawImage; 7],
-    pub morale: [RawImage; 7],
-    pub flag: RawImage,
-}
-
-impl StaticAssets {
-    pub fn init(&mut self, frame: &mut epi::Frame<'_>) {
-        self.background
-            .load_bytes(include_bytes!("../resources/heroscr4.png"), frame);
-        self.pskills[0].load_bytes(include_bytes!("../resources/pskill_attack.png"), frame);
-        self.pskills[1].load_bytes(include_bytes!("../resources/pskill_defence.png"), frame);
-        self.pskills[2].load_bytes(include_bytes!("../resources/pskill_mpower.png"), frame);
-        self.pskills[3].load_bytes(include_bytes!("../resources/pskill_knowledge.png"), frame);
-        self.xp
-            .load_bytes(include_bytes!("../resources/pskill_xp.png"), frame);
-        self.mana
-            .load_bytes(include_bytes!("../resources/pskill_mana.png"), frame);
-        self.flag
-            .load_bytes(include_bytes!("../resources/crest.png"), frame);
-
-        self.luck[0].load_bytes(include_bytes!("../resources/luck/00_00.png"), frame);
-        self.luck[1].load_bytes(include_bytes!("../resources/luck/00_01.png"), frame);
-        self.luck[2].load_bytes(include_bytes!("../resources/luck/00_02.png"), frame);
-        self.luck[3].load_bytes(include_bytes!("../resources/luck/00_03.png"), frame);
-        self.luck[4].load_bytes(include_bytes!("../resources/luck/00_04.png"), frame);
-        self.luck[5].load_bytes(include_bytes!("../resources/luck/00_05.png"), frame);
-        self.luck[6].load_bytes(include_bytes!("../resources/luck/00_06.png"), frame);
-
-        self.morale[0].load_bytes(include_bytes!("../resources/morale/00_00.png"), frame);
-        self.morale[1].load_bytes(include_bytes!("../resources/morale/00_01.png"), frame);
-        self.morale[2].load_bytes(include_bytes!("../resources/morale/00_02.png"), frame);
-        self.morale[3].load_bytes(include_bytes!("../resources/morale/00_03.png"), frame);
-        self.morale[4].load_bytes(include_bytes!("../resources/morale/00_04.png"), frame);
-        self.morale[5].load_bytes(include_bytes!("../resources/morale/00_05.png"), frame);
-        self.morale[6].load_bytes(include_bytes!("../resources/morale/00_06.png"), frame);
-    }
-}
-
-impl<B: Backend> epi::App for HeroViewer<B> {
+impl epi::App for HeroViewer {
     fn setup(
         &mut self,
         ctx: &egui::CtxRef,
@@ -78,8 +31,6 @@ impl<B: Backend> epi::App for HeroViewer<B> {
         self.pixels_per_point = 1.0;
 
         self.static_assets.init(frame);
-        self.heroes = demo_heroes(frame);
-        self.hero_idx = 0;
 
         let mut visuals = egui::Visuals::default();
         visuals.override_text_color = Some(egui::Color32::WHITE);
@@ -95,6 +46,9 @@ impl<B: Backend> epi::App for HeroViewer<B> {
         self.process_global_hotkeys(ctx.input());
 
         self.backend.update(frame);
+        if let Ok(msg) = self.backend.messages_receiver.try_recv() {
+            self.backend_messages.push(msg);
+        }
 
         ctx.set_pixels_per_point(self.pixels_per_point);
         frame.set_window_size(WINDOW_SIZE);
@@ -107,14 +61,32 @@ impl<B: Backend> epi::App for HeroViewer<B> {
                     self.static_assets.background.image(),
                 );
 
+                self.show_settings(ui);
+                let status = self.backend.get_status();
+                if status == BackendStatus::NotConnected {
+                    ui.put(
+                        INFO_BOX,
+                        egui::Label::new(format!(
+                            "Not connected. {}",
+                            self.backend_messages.last().unwrap_or(&"".to_string())
+                        )),
+                    );
+                    return;
+                } else if status == BackendStatus::Connecting {
+                    ui.put(INFO_BOX, egui::Label::new("Connecting..."));
+                    return;
+                } else if let Some(msg) = self.backend_messages.last() {
+                    ui.put(INFO_BOX, egui::Label::new(msg));
+                }
+
+                self.hero_select_buttons = self.backend.get_player_heroes(self.player_id);
                 self.show_hero_switcher(ui);
-                self.show_flag(ui);
                 self.show_portrait_name_class(ui);
                 self.show_primary_skills(ui);
                 self.show_xp(ui);
                 self.show_mana(ui);
-                self.show_specialty(ui);
-                self.show_skills(ui);
+                self.show_specialty(ui, frame);
+                self.show_skills(ui, frame);
                 self.show_luck_morale(ui);
             });
     }
@@ -124,72 +96,149 @@ impl<B: Backend> epi::App for HeroViewer<B> {
     }
 }
 
-impl<B: Backend> HeroViewer<B> {
-    fn hero(&self) -> &Hero {
-        &self.heroes[self.hero_idx]
-    }
+macro_rules! get_or_return {
+    ($target:expr) => {
+        match $target {
+            Some(v) => v,
+            None => return,
+        }
+    };
+}
 
-    fn hero_mut(&mut self) -> &mut Hero {
-        &mut self.heroes[self.hero_idx]
-    }
-
+impl HeroViewer {
     fn show_hero_switcher(&mut self, ui: &mut egui::Ui) {
-        for (idx, hero) in self.heroes.iter().enumerate() {
+        for (idx, hero_button) in self.hero_select_buttons.iter().enumerate() {
             if ui
                 .put(
                     H_SWITCHER_PORTRAIT.translate(H_SWITCHER_PORTRAIT_OFFSET * idx as f32),
-                    hero.character.portrait_small.image_button(),
+                    hero_button.portrait.image_button(),
                 )
                 .clicked()
             {
-                self.hero_idx = idx;
+                self.selected_hero_idx = idx;
+                self.hero = Some(get_or_return!(self.backend.get_hero(hero_button.id)));
             }
         }
-        let selected_hero =
-            H_SWITCHER_PORTRAIT.translate(H_SWITCHER_PORTRAIT_OFFSET * self.hero_idx as f32);
+        let selected_hero = H_SWITCHER_PORTRAIT
+            .translate(H_SWITCHER_PORTRAIT_OFFSET * self.selected_hero_idx as f32);
         selected_frame_around(ui, selected_hero);
     }
 
     fn show_portrait_name_class(&self, ui: &mut egui::Ui) {
-        ui.put(H_PORTRAIT, self.hero().character.portrait.image());
+        let hero = get_or_return!(&self.hero);
+
+        ui.put(H_PORTRAIT, hero.character.portrait.image());
         let hero_name_label = egui::Label::new(
-            egui::RichText::new(&self.hero().character.name)
+            egui::RichText::new(&hero.character.name)
                 .heading()
                 .color(H_GOLD),
         );
         ui.put(H_NAME, hero_name_label);
         let hero_class_label = egui::Label::new(&format!(
             "{} {}-го уровня",
-            &self.hero().character.class,
-            self.hero().level
+            hero.character.class, hero.level
         ));
         ui.put(H_CLASS, hero_class_label);
     }
 
-    fn show_specialty(&mut self, ui: &mut egui::Ui) {
-        let widget_response = ui.put(SPEC_IMAGE, self.hero().spec.image.image_button());
-        let specs = self
-            .backend
-            .get_specs(&self.heroes[self.hero_idx].character.class);
-        if let Some(new_value) = edit_spec_popup(
-            ui,
-            widget_response,
-            &specs,
-            &self.heroes[self.hero_idx].spec,
-        ) {
-            self.hero_mut().spec = new_value;
-        }
+    fn show_specialty(&mut self, ui: &mut egui::Ui, frame: &mut epi::Frame) {
+        let hero = get_or_return!(&mut self.hero);
+        let mut set_new_value = false;
+
+        let widget_response = ui.put(SPEC_IMAGE, hero.spec.image.image_button());
+
+        let mut edit_value = None;
+
+        show_selection_window(ui, widget_response, "Специалность", |ui| {
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.search_query);
+                if ui.button("➕").clicked() {
+                    edit_value = Some(None);
+                }
+            });
+
+            let rows = get_or_return!(self
+                .backend
+                .get_specs_row_count(hero.id, &self.search_query));
+            let scroll_area = egui::ScrollArea::vertical().auto_shrink([false, true]);
+            scroll_area.show_rows(ui, SKILL_BOX.height(), rows, |ui, range| {
+                let search_range = get_or_return!(self.backend.get_specs_range(
+                    hero.id,
+                    &self.search_query,
+                    &range
+                ));
+                for s in search_range {
+                    let selected = *s == hero.spec;
+                    let (e, b) = show_selectable_block(ui, &s.image, &s.name, selected);
+                    if e.clicked() {
+                        edit_value = Some(Some(s.clone()));
+                    } else if b.clicked() {
+                        hero.spec = s.clone();
+                        set_new_value = true;
+                    }
+                }
+            });
+        });
 
         ui.allocate_ui_at_rect(SKILL_TEXT.translate(-SKILL_OFFSET_V), |ui| {
             let spec_top_label = egui::Label::new("Специальность");
             ui.add(spec_top_label);
             ui.add_space(4.);
-            let spec_bottom_label = egui::Label::new(&self.hero().spec.name);
+            let spec_bottom_label = egui::Label::new(&hero.spec.name);
             ui.add(spec_bottom_label);
+        });
+
+        show_spec_edit_window(ui, edit_value, &mut self.backend, frame);
+
+        if set_new_value {
+            self.backend.set_hero_spec(hero.id, &hero.spec.name);
+        }
+    }
+
+    fn show_xp(&mut self, ui: &mut egui::Ui) {
+        let hero = get_or_return!(&mut self.hero);
+
+        let widget_response = ui.put(SKILL_IMAGE, self.static_assets.xp.image_button());
+        if let Some(new_value) = show_xp_popup(ui, widget_response, hero.experience) {
+            hero.experience = new_value;
+            self.backend.set_hero_xp(hero.id, new_value);
+        }
+        ui.allocate_ui_at_rect(SKILL_TEXT, |ui| {
+            let xp_top_label = egui::Label::new("Опыт");
+            ui.add(xp_top_label);
+            ui.add_space(4.);
+            let xp_bottom_label = egui::Label::new(&hero.experience.to_string());
+            ui.add(xp_bottom_label)
+        });
+    }
+
+    fn show_mana(&mut self, ui: &mut egui::Ui) {
+        let hero = get_or_return!(&mut self.hero);
+
+        let widget_response = ui.put(
+            SKILL_IMAGE.translate(SKILL_OFFSET_H),
+            self.static_assets.mana.image_button(),
+        );
+        if let Some((new_current, new_max)) =
+            show_mana_popup(ui, widget_response, hero.mana_current, hero.mana_max)
+        {
+            hero.mana_current = new_current;
+            hero.mana_max = new_max;
+            self.backend.set_hero_mana(hero.id, new_current, new_max);
+        }
+        ui.allocate_ui_at_rect(SKILL_TEXT.translate(SKILL_OFFSET_H), |ui| {
+            let mana_top_label = egui::Label::new("Очки магии");
+            ui.add(mana_top_label);
+            ui.add_space(4.);
+            let mana_bottom_label =
+                egui::Label::new(&format!("{}/{}", hero.mana_current, hero.mana_max));
+            ui.add(mana_bottom_label);
         });
     }
 
     fn show_primary_skills(&mut self, ui: &mut egui::Ui) {
+        let hero = get_or_return!(&mut self.hero);
+
         for (i, ((name, image), value)) in ["Атака", "Защита", "Магия", "Знания"]
             .iter()
             .zip(
@@ -199,7 +248,7 @@ impl<B: Backend> HeroViewer<B> {
                     .map(|i| i.image_button())
                     .collect::<Vec<_>>(),
             )
-            .zip(&mut self.hero_mut().pskills)
+            .zip(&mut hero.pskills)
             .enumerate()
         {
             let offset = PSKILL_OFFSET * i as f32;
@@ -208,8 +257,9 @@ impl<B: Backend> HeroViewer<B> {
             let value_rect = PSKILL_VALUE.translate(offset);
 
             let image_button_response = ui.put(image_rect, image);
-            if let Some(new_value) = edit_pskill_popup(ui, image_button_response, *value) {
+            if let Some(new_value) = show_pskill_popup(ui, image_button_response, *value) {
                 *value = new_value;
+                self.backend.set_hero_pskill(hero.id, i, new_value);
             }
 
             let name_label = egui::Label::new(egui::RichText::new(*name).color(H_GOLD));
@@ -219,9 +269,16 @@ impl<B: Backend> HeroViewer<B> {
         }
     }
 
-    fn show_skills(&mut self, ui: &mut egui::Ui) {
-        for (i, skill) in self.heroes[self.hero_idx].skills.iter_mut().enumerate() {
+    fn show_skills(&mut self, ui: &mut egui::Ui, frame: &mut epi::Frame) {
+        let hero = get_or_return!(&mut self.hero);
+
+        let mut edit_skill = None;
+
+        for (i, skill) in hero.skills.iter_mut().enumerate() {
             let offset = SKILL_OFFSET_V * (i % 4 + 1) as f32 + SKILL_OFFSET_H * (i / 4) as f32;
+
+            let mut set_new_value = false;
+
             let widget_response = if let Some(skill) = skill {
                 let image = skill.image.image_button();
                 ui.put(SKILL_IMAGE.translate(offset), image)
@@ -229,10 +286,54 @@ impl<B: Backend> HeroViewer<B> {
                 let button = egui::Button::new("").fill(egui::Color32::TRANSPARENT);
                 ui.put(SKILL_IMAGE.translate(offset), button)
             };
-            let skills = self.backend.get_skills();
-            if let Some(new_value) = edit_skill_popup(ui, widget_response, skills, &skill, offset) {
-                *skill = new_value;
-            }
+
+            show_selection_window(ui, widget_response, &format!("skill_{}", i), |ui| {
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(&mut self.search_query);
+                    if ui.button("➕").clicked() {
+                        edit_skill = Some(None);
+                        return;
+                    }
+                    if ui.button("❌").clicked() {
+                        *skill = None;
+                        set_new_value = true;
+                    }
+                });
+
+                let rows = get_or_return!(self
+                    .backend
+                    .get_skill_row_count(hero.id, &self.search_query));
+                let scroll_area = egui::ScrollArea::vertical().auto_shrink([false, true]);
+                scroll_area.show_rows(ui, SKILL_BOX.height(), rows, |ui, range| {
+                    let search_range = get_or_return!(self.backend.get_skill_range(
+                        hero.id,
+                        &self.search_query,
+                        &range
+                    ));
+                    for s in search_range {
+                        let is_selected =
+                            skill.as_ref().map(|s2| s2.id == s.id).unwrap_or_default();
+                        let (e, b) = show_selectable_block(
+                            ui,
+                            &s.image,
+                            &format!("{}\n{} ступени", s.name, s.level),
+                            is_selected,
+                        );
+                        if e.clicked() {
+                            edit_skill = Some(Some(s.clone()));
+                            return;
+                        } else if b.clicked() {
+                            *skill = Some(s.clone());
+                            set_new_value = true;
+                        }
+                    }
+                });
+
+                if set_new_value {
+                    self.backend
+                        .set_hero_skill(hero.id, i, skill.as_ref().map(|s| s.id))
+                }
+            });
 
             if let Some(skill) = skill {
                 ui.allocate_ui_at_rect(SKILL_TEXT.translate(offset), |ui| {
@@ -244,54 +345,118 @@ impl<B: Backend> HeroViewer<B> {
                 });
             }
         }
+        show_skill_edit_window(ui, edit_skill, &mut self.backend, frame);
     }
 
-    fn show_luck_morale(&self, ui: &mut egui::Ui) {
-        ui.put(
-            LUCK_IMAGE,
-            self.static_assets.luck[self.hero().luck as usize].image(),
-        )
-        .on_hover_text(
-            [
-                "Отряд проклят!",
-                "Ужасная",
-                "Плохая",
-                "Нормальная",
-                "Хорошая",
-                "Отличная",
-                "Великолепная",
-            ][self.hero().luck as usize],
-        );
-        ui.put(
-            MORALE_IMAGE,
-            self.static_assets.morale[self.hero().morale as usize].image(),
-        )
-        .on_hover_text(
-            [
-                "Готовы предать",
-                "Ужасная",
-                "Плохая",
-                "Нормальная",
-                "Хорошая",
-                "Отличная",
-                "Ярость!",
-            ][self.hero().morale as usize],
-        );
+    fn show_luck_morale(&mut self, ui: &mut egui::Ui) {
+        let hero = get_or_return!(&mut self.hero);
+        let luck_titles = [
+            "Отряд проклят!",
+            "Ужасная",
+            "Плохая",
+            "Нормальная",
+            "Хорошая",
+            "Отличная",
+            "Великолепная",
+        ];
+        let morale_titles = [
+            "Готовы предать",
+            "Ужасная",
+            "Плохая",
+            "Нормальная",
+            "Хорошая",
+            "Отличная",
+            "Ярость!",
+        ];
+
+        let luck_button_response = ui
+            .put(
+                LUCK_IMAGE,
+                self.static_assets.luck[hero.luck as usize].image_button(),
+            )
+            .on_hover_text(luck_titles[hero.luck as usize]);
+        show_selection_window(ui, luck_button_response, "Удача", |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for (i, title) in luck_titles.iter().enumerate() {
+                    let selected = i as u8 == hero.luck;
+                    if show_selectable_block_no_edit(
+                        ui,
+                        &self.static_assets.luck[i],
+                        *title,
+                        selected,
+                    )
+                    .clicked()
+                    {
+                        hero.luck = i as u8;
+                        self.backend.set_hero_luck(hero.id, i as u8);
+                    }
+                }
+            })
+        });
+
+        let morale_button_response = ui
+            .put(
+                MORALE_IMAGE,
+                self.static_assets.morale[hero.morale as usize].image_button(),
+            )
+            .on_hover_text(morale_titles[hero.morale as usize]);
+        show_selection_window(ui, morale_button_response, "Мораль", |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for (i, title) in morale_titles.iter().enumerate() {
+                    let selected = i as u8 == hero.morale;
+                    if show_selectable_block_no_edit(
+                        ui,
+                        &self.static_assets.morale[i],
+                        *title,
+                        selected,
+                    )
+                    .clicked()
+                    {
+                        hero.morale = i as u8;
+                        self.backend.set_hero_morale(hero.id, i as u8);
+                    }
+                }
+            })
+        });
     }
 
-    fn show_units(&mut self, ui: &mut egui::Ui) {
-        unimplemented!()
-    }
+    fn show_settings(&mut self, ui: &mut egui::Ui) {
+        use egui::*;
+        use BackendStatus::*;
+        let button_response = ui.put(FLAG_IMAGE, self.static_assets.flag.image_button());
+        show_selection_window(ui, button_response, "Настройки", |ui| {
+            let status = self.backend.get_status();
+            Grid::new("grid").num_columns(2).show(ui, |ui| {
+                ui.label("Подключиться к БД");
+                let connect_button = ui.add_enabled(status == NotConnected, Button::new("Connect"));
+                if connect_button.clicked() {
+                    self.backend.connect_to_db();
+                }
+                ui.end_row();
 
-    fn show_backpack(&mut self, ui: &mut egui::Ui) {
-        unimplemented!()
-    }
+                ui.label("Создать БД");
+                let create_db_button =
+                    ui.add_enabled(status == NotConnected, Button::new("Create DB"));
+                if create_db_button.clicked() {
+                    self.backend.create_db();
+                }
+                ui.end_row();
 
-    fn show_flag(&mut self, ui: &mut egui::Ui) {
-        if ui
-            .put(FLAG_IMAGE, self.static_assets.flag.image_button())
-            .clicked()
-        {}
+                ui.label("Удалить БД");
+                let drop_db_button = ui.add_enabled(
+                    status == Idle || status == NotConnected,
+                    Button::new("Drop DB"),
+                );
+                if drop_db_button.clicked() {
+                    self.backend.drop_db();
+                }
+                ui.end_row();
+
+                ui.label("Размер интерфейса");
+                ui.add(Slider::new(&mut self.pixels_per_point, 1.0..=1.5));
+                ui.end_row()
+            });
+        })
     }
 
     fn process_global_hotkeys(&mut self, input: &egui::InputState) {
@@ -301,52 +466,4 @@ impl<B: Backend> HeroViewer<B> {
             self.pixels_per_point = (self.pixels_per_point - 0.1).max(1.0);
         }
     }
-
-    fn show_xp(&mut self, ui: &mut egui::Ui) {
-        let widget_response = ui.put(SKILL_IMAGE, self.static_assets.xp.image_button());
-        if let Some(new_value) = edit_xp_popup(ui, widget_response, self.hero().experience) {
-            self.hero_mut().experience = new_value;
-        }
-        ui.allocate_ui_at_rect(SKILL_TEXT, |ui| {
-            let xp_top_label = egui::Label::new("Опыт");
-            ui.add(xp_top_label);
-            ui.add_space(4.);
-            let xp_bottom_label = egui::Label::new(&self.hero().experience.to_string());
-            ui.add(xp_bottom_label)
-        });
-    }
-
-    fn show_mana(&mut self, ui: &mut egui::Ui) {
-        let widget_response = ui.put(
-            SKILL_IMAGE.translate(SKILL_OFFSET_H),
-            self.static_assets.mana.image_button(),
-        );
-        if let Some((new_current, new_max)) = edit_mana_popup(
-            ui,
-            widget_response,
-            self.hero().mana_current,
-            self.hero().mana_max,
-        ) {
-            self.hero_mut().mana_current = new_current;
-            self.hero_mut().mana_max = new_max;
-        }
-        ui.allocate_ui_at_rect(SKILL_TEXT.translate(SKILL_OFFSET_H), |ui| {
-            let mana_top_label = egui::Label::new("Очки магии");
-            ui.add(mana_top_label);
-            ui.add_space(4.);
-            let mana_bottom_label = egui::Label::new(&format!(
-                "{}/{}",
-                self.hero().mana_current,
-                self.hero().mana_max
-            ));
-            ui.add(mana_bottom_label);
-        });
-    }
-}
-
-fn selected_frame_around(ui: &mut egui::Ui, mut rect: egui::Rect) {
-    rect.min -= (1.0, 1.0).into();
-    rect.max += (1.0, 1.0).into();
-    ui.painter()
-        .rect_stroke(rect, 0.0, egui::Stroke::new(1., H_GOLD));
 }

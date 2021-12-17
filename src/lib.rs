@@ -1,16 +1,16 @@
 mod backend;
-mod backpack;
+// mod backpack;
 mod character;
-mod edit_views;
 mod geometry;
 mod hero;
 mod hero_viewer;
 mod skill;
 mod spec;
-mod unit;
+// mod unit;
+mod static_assets;
 mod utils;
+mod widgets;
 
-pub use backend::DemoBackend;
 pub use geometry::WINDOW_SIZE;
 pub use hero_viewer::HeroViewer;
 
@@ -24,6 +24,6 @@ use eframe::wasm_bindgen::{self, prelude::*};
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn start(canvas_id: &str) -> Result<(), wasm_bindgen::JsValue> {
-    let app = self::HeroViewer::<DemoBackend>::default();
+    let app = self::HeroViewer::default();
     eframe::start_web(canvas_id, Box::new(app))
 }

@@ -24,6 +24,7 @@ pos! {
     SKILL_BOX, 18, 228, 139, 46,
     MORALE_IMAGE, 182, 184, 42, 38,
     LUCK_IMAGE, 240, 184, 42, 38,
+    INFO_BOX, 8, 558, 656, 20,
     FLAG_IMAGE, 606, 8, 58, 64
 }
 
