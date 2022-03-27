@@ -70,7 +70,7 @@ BEGIN
         mana            int NOT NULL,
         knowledge       int NOT NULL,
         specialityimage bytea,
-        player          int REFERENCES player (id),
+        player          int REFERENCES player (id) ON DELETE CASCADE,
         skills          int REFERENCES skills (id)
     );
 
@@ -85,41 +85,77 @@ BEGIN
 END;
 $$;
 
+--<
+
 SELECT create_all_table();
+
+--<
+
+CREATE OR REPLACE FUNCTION clear_players() RETURNS void
+    LANGUAGE plpgsql
+AS
+$$
+BEGIN
+    DELETE FROM player WHERE true;
+END;
+$$;
+
+--<
+
+CREATE OR REPLACE FUNCTION clear_hero() RETURNS void
+    LANGUAGE plpgsql
+AS
+$$
+BEGIN
+    DELETE FROM hero WHERE true;
+END;
+$$;
+
+--<
 
 CREATE OR REPLACE FUNCTION delete_player(playerid int) RETURNS bool
     LANGUAGE plpgsql
 AS
 $$
-
 BEGIN
     DELETE FROM player WHERE id = playerid;
     RETURN TRUE;
 END;
 $$;
 
+--<
+
 CREATE OR REPLACE FUNCTION create_player(playername varchar) RETURNS int
     LANGUAGE plpgsql
 AS
 $$
-
 BEGIN
     INSERT INTO player VALUES (default, playername);
     RETURN (SELECT id FROM player WHERE name = playername);
 END;
 $$;
 
+--<
+
 CREATE OR REPLACE FUNCTION create_characters(name varchar, side varchar, class varchar, offence int, deffence int,
                                              mana int, knowledge int, speciality_id int) RETURNS int
     LANGUAGE plpgsql
 AS
 $$
-
 BEGIN
     INSERT INTO characters VALUES (default, name, side, class, offence, deffence, mana, knowledge, speciality_id);
     RETURN (SELECT id FROM characters ORDER BY id DESC LIMIT 1);
 END;
 $$;
+
+--<
+
+CREATE OR REPLACE FUNCTION get_characters() RETURNS TABLE (cid int, cname text)
+AS
+$$ SELECT characters.id, characters.name FROM characters ORDER BY characters.id;
+$$ LANGUAGE sql;
+
+--<
 
 CREATE OR REPLACE FUNCTION delete_characters_by_name(namechar varchar) RETURNS void
     LANGUAGE plpgsql
@@ -130,6 +166,8 @@ BEGIN
 END;
 $$;
 
+--<
+
 CREATE OR REPLACE FUNCTION delete_characters(charactersid int) RETURNS void
     LANGUAGE plpgsql
 AS
@@ -138,6 +176,8 @@ BEGIN
     DELETE FROM characters WHERE characters.id = charactersid;
 END;
 $$;
+
+--<
 
 CREATE OR REPLACE FUNCTION create_hero(player int, characters_id int) RETURNS int
     LANGUAGE plpgsql
@@ -154,6 +194,8 @@ BEGIN
 END;
 $$;
 
+--<
+
 CREATE OR REPLACE FUNCTION delete_hero(heroid int) RETURNS void
     LANGUAGE plpgsql
 AS
@@ -162,6 +204,8 @@ BEGIN
     DELETE FROM hero WHERE id = heroid;
 END;
 $$;
+
+--<
 
 -- CREATE OR REPLACE FUNCTION add_unit_to_hero(playerid int, heroid int, slot int, unitid int, amount int) RETURNS void
 --     LANGUAGE plpgsql
@@ -239,6 +283,8 @@ BEGIN
 END;
 $$;
 
+--<
+
 CREATE OR REPLACE FUNCTION get_players()
     RETURNS table
             (
@@ -252,6 +298,8 @@ BEGIN
     RETURN QUERY (SELECT player.id, player.name FROM player);
 END;
 $$;
+
+--<
 
 CREATE OR REPLACE FUNCTION set_level() RETURNS trigger AS
 $$
@@ -272,11 +320,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+--<
+
 CREATE TRIGGER thero
     AFTER UPDATE OF experience
     ON hero
     FOR EACH ROW
 EXECUTE PROCEDURE set_level();
+
+--<
 
 CREATE OR REPLACE FUNCTION modify_hero(
                 nid            int,
@@ -294,6 +346,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+--<
+
 -- CREATE OR REPLACE FUNCTION create_unit(name varchar, level int, offence int, deffence int, shots int, damage varchar,
 --                                        vital int, speed int) RETURNS int
 --     LANGUAGE plpgsql
@@ -309,24 +363,25 @@ CREATE OR REPLACE FUNCTION create_skill(name varchar, describe varchar, effect v
     LANGUAGE plpgsql
 AS
 $$
-
 BEGIN
     INSERT INTO skills VALUES (default, name, describe, effect);
     RETURN (SELECT id FROM skills ORDER BY id DESC LIMIT 1);
 END;
 $$;
 
+--<
+
 CREATE OR REPLACE FUNCTION create_speciallity(name varchar) RETURNS int
     LANGUAGE plpgsql
 AS
 $$
-
 BEGIN
     INSERT INTO speciallity VALUES (default, name);
     RETURN (SELECT id FROM speciallity ORDER BY id DESC LIMIT 1);
 END;
 $$;
 
+--<
 
 CREATE OR REPLACE FUNCTION fill_tables() RETURNS void
     LANGUAGE plpgsql
@@ -390,5 +445,7 @@ BEGIN
 
 END;
 $$;
+
+--<
 
 SELECT fill_tables();
