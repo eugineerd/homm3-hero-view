@@ -38,10 +38,23 @@ impl RawImage {
         }
     }
 
+    pub fn take_bytes(bytes: Vec<u8>) -> Self {
+        RawImage {
+            bytes: Box::new(bytes),
+            ..Default::default()
+        }
+    }
+
     pub fn load_bytes(&mut self, bytes: &[u8], frame: &mut epi::Frame<'_>) {
         let new_image = RawImage::from_bytes(bytes, frame);
         self.dimensions = new_image.dimensions;
         self.bytes = new_image.bytes;
+        self.texture_id = new_image.texture_id;
+    }
+
+    pub fn load_stored_bytes(&mut self, frame: &mut epi::Frame) {
+        let new_image = RawImage::from_bytes(&self.bytes, frame);
+        self.dimensions = new_image.dimensions;
         self.texture_id = new_image.texture_id;
     }
 

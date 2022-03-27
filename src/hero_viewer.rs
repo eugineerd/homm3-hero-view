@@ -11,10 +11,10 @@ use crate::widgets::*;
 #[derive(Default)]
 pub struct HeroViewer {
     static_assets: StaticAssets,
+    hero_id: Option<usize>,
     hero: Option<Hero>,
-    hero_select_buttons: Vec<HeroSelectButton>,
     selected_hero_idx: usize,
-    player_id: usize,
+    player: (usize, String),
     pixels_per_point: f32,
     search_query: String,
     backend: DemoBackend,
@@ -49,6 +49,10 @@ impl epi::App for HeroViewer {
         if let Ok(msg) = self.backend.messages_receiver.try_recv() {
             self.backend_messages.push(msg);
         }
+        if let Some(id) = self.hero_id {
+            let new_hero = self.backend.get_hero(id);
+            self.hero = Some(new_hero.unwrap().clone());
+        }
 
         ctx.set_pixels_per_point(self.pixels_per_point);
         frame.set_window_size(WINDOW_SIZE);
@@ -62,24 +66,37 @@ impl epi::App for HeroViewer {
                 );
 
                 self.show_settings(ui);
-                let status = self.backend.get_status();
-                if status == BackendStatus::NotConnected {
-                    ui.put(
-                        INFO_BOX,
-                        egui::Label::new(format!(
-                            "Not connected. {}",
-                            self.backend_messages.last().unwrap_or(&"".to_string())
-                        )),
-                    );
+                if self.show_status(ui).is_none() {
                     return;
-                } else if status == BackendStatus::Connecting {
-                    ui.put(INFO_BOX, egui::Label::new("Connecting..."));
-                    return;
-                } else if let Some(msg) = self.backend_messages.last() {
-                    ui.put(INFO_BOX, egui::Label::new(msg));
+                }
+                if ui
+                    .put(
+                        SKILL_BOX.translate(SKILL_OFFSET_V),
+                        egui::Button::new("Clear all tables"),
+                    )
+                    .clicked()
+                {
+                    self.backend.clear_all_tables();
+                }
+                if ui
+                    .put(
+                        SKILL_BOX.translate(SKILL_OFFSET_V + SKILL_OFFSET_H),
+                        egui::Button::new("Clear heroes"),
+                    )
+                    .clicked()
+                {
+                    self.backend.clear_heroes();
+                }
+                if ui
+                    .put(
+                        SKILL_BOX.translate(2. * SKILL_OFFSET_V + SKILL_OFFSET_H),
+                        egui::Button::new("Init values"),
+                    )
+                    .clicked()
+                {
+                    self.backend.init_values();
                 }
 
-                self.hero_select_buttons = self.backend.get_player_heroes(self.player_id);
                 self.show_hero_switcher(ui);
                 self.show_portrait_name_class(ui);
                 self.show_primary_skills(ui);
@@ -107,7 +124,12 @@ macro_rules! get_or_return {
 
 impl HeroViewer {
     fn show_hero_switcher(&mut self, ui: &mut egui::Ui) {
-        for (idx, hero_button) in self.hero_select_buttons.iter().enumerate() {
+        for (idx, hero_button) in self
+            .backend
+            .get_player_heroes(self.player.0)
+            .iter()
+            .enumerate()
+        {
             if ui
                 .put(
                     H_SWITCHER_PORTRAIT.translate(H_SWITCHER_PORTRAIT_OFFSET * idx as f32),
@@ -116,12 +138,14 @@ impl HeroViewer {
                 .clicked()
             {
                 self.selected_hero_idx = idx;
-                self.hero = Some(get_or_return!(self.backend.get_hero(hero_button.id)));
+                self.hero_id = Some(hero_button.id);
             }
         }
-        let selected_hero = H_SWITCHER_PORTRAIT
-            .translate(H_SWITCHER_PORTRAIT_OFFSET * self.selected_hero_idx as f32);
-        selected_frame_around(ui, selected_hero);
+        if self.hero.is_some() {
+            let selected_hero = H_SWITCHER_PORTRAIT
+                .translate(H_SWITCHER_PORTRAIT_OFFSET * self.selected_hero_idx as f32);
+            selected_frame_around(ui, selected_hero);
+        }
     }
 
     fn show_portrait_name_class(&self, ui: &mut egui::Ui) {
@@ -452,6 +476,16 @@ impl HeroViewer {
                 }
                 ui.end_row();
 
+                ui.label("Игрок");
+                egui::ComboBox::from_id_source(ui.id())
+                    .selected_text(&self.player.1)
+                    .show_ui(ui, |ui| {
+                        for player in self.backend.get_players() {
+                            ui.selectable_value(&mut self.player, player.clone(), &player.1);
+                        }
+                    });
+                ui.end_row();
+
                 ui.label("Размер интерфейса");
                 ui.add(Slider::new(&mut self.pixels_per_point, 1.0..=1.5));
                 ui.end_row()
@@ -464,6 +498,28 @@ impl HeroViewer {
             self.pixels_per_point = (self.pixels_per_point + 0.1).min(1.5);
         } else if input.key_pressed(egui::Key::Z) && input.modifiers.ctrl {
             self.pixels_per_point = (self.pixels_per_point - 0.1).max(1.0);
+        }
+    }
+
+    fn show_status(&self, ui: &mut egui::Ui) -> Option<()> {
+        let status = self.backend.get_status();
+        if status == BackendStatus::NotConnected {
+            ui.put(
+                INFO_BOX,
+                egui::Label::new(format!(
+                    "Not connected. {}",
+                    self.backend_messages.last().unwrap_or(&"".to_string())
+                )),
+            );
+            None
+        } else if status == BackendStatus::Connecting {
+            ui.put(INFO_BOX, egui::Label::new("Connecting..."));
+            None
+        } else if let Some(msg) = self.backend_messages.last() {
+            ui.put(INFO_BOX, egui::Label::new(msg));
+            Some(())
+        } else {
+            None
         }
     }
 }

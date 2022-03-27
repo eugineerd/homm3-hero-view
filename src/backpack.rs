@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Default)]
 pub struct Backpack {}
 
 pub struct Item {}
